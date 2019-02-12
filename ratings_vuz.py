@@ -1,5 +1,6 @@
-from pprint import pprint
-from json import JSONEncoder, JSONDecoder
+import hashlib
+from lxml import etree as ET
+from lxml.builder import E
 
 import requests
 from bs4 import BeautifulSoup
@@ -29,27 +30,29 @@ def parse9(soup: BeautifulSoup):
     return '. '.join(result)
 
 
+def to_rss(result):
+    # когда в руках молоток, всё кажется гвоздями…
+    ls = []
+    for i, text in result.items():
+        h = hashlib.new('ripemd160')
+        h.update(text.encode())
+        hash = h.hexdigest()
+        ls.append(E.item(
+            E.link('%s#%s' % (RATINGS[i], hash)),
+            E.guid('rating_%s' % hash),
+            E.title('%d. %s' % (i, text)),
+        ))
+    rss = E.rss(E.channel(*ls), version='2.0')
+    print(ET.tostring(rss, xml_declaration=True, encoding='utf-8').decode('utf-8'))
+
+
 def main():
     result = {}
     for i, url in RATINGS.items():
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'lxml')
         result[i] = globals()['parse%d' % i](soup)
-
-    with open('db.json') as f:
-        old_result = {}
-        for k, v in JSONDecoder().decode(f.read()).items():
-            old_result[int(k)] = v
-
-    diff = []
-    for i in result.keys():
-        if result[i] != old_result[i]:
-            diff.append('%s' % RATINGS[i])
-            diff.append('old: %s' % old_result[i])
-            diff.append('new: %s' % result[i])
-            diff.append('')
-    print('\n'.join(diff))
-    # todo save
+    to_rss(result)
 
 
 if __name__ == '__main__':
